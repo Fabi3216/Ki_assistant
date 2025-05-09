@@ -1,6 +1,7 @@
 package com.example.avery;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -14,7 +15,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -30,6 +30,8 @@ import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
+
+
 
     private TextToSpeech tts;
     private WeatherService weatherService;
@@ -50,6 +52,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_USERNAME = "username";
     private FusedLocationProviderClient fusedLocationClient;
 
+    @SuppressLint("SetTextI18n")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -85,12 +88,13 @@ public class MainActivity extends AppCompatActivity {
 
         tts = new TextToSpeech(getApplicationContext(), status -> {
             appointmentManager = new AppointmentManager(this, true);
-            appointmentAdapter = new AppointmentAdapter(appointmentManager.getAppointments());
-            recyclerView.setAdapter(appointmentAdapter);
-
             noteManager = new NoteManager(this, true);
+
+            // Lade Daten
+            refreshAppointments();
             noteAdapter = new NoteAdapter(new ArrayList<>());
             noteRecyclerView.setAdapter(noteAdapter);
+            refreshNotes();
 
             weatherService = new WeatherService(this, tts, weatherTextView, weatherIcon);
 
@@ -105,41 +109,32 @@ public class MainActivity extends AppCompatActivity {
                     textGreeting.setText("Hallo " + name + " 👋");
                     tts.speak("Hallo " + name + ", wie kann ich dir heute assistieren?", TextToSpeech.QUEUE_FLUSH, null, null);
                 }
-
-                // Notizen nach dem Laden im Hintergrund anzeigen
-                new Thread(() -> {
-                    List<Appointment> appointments = appointmentManager.getAppointments();
-                    runOnUiThread(() -> {
-                        appointmentAdapter = new AppointmentAdapter(appointments);
-                        recyclerView.setAdapter(appointmentAdapter);
-                    });
-                }).start();
-
             }
         });
 
+
+
         speakButton.setOnClickListener(view -> startSpeechRecognition());
     }
+
     private void refreshAppointments() {
         new Thread(() -> {
-            List<Appointment> updatedList = appointmentManager.getAppointments();
+            List<Appointment> appointments = appointmentManager.getAppointments();
             runOnUiThread(() -> {
-                appointmentAdapter = new AppointmentAdapter(updatedList);
+                appointmentAdapter = new AppointmentAdapter(appointments);
                 recyclerView.setAdapter(appointmentAdapter);
             });
         }).start();
     }
+
     private void refreshNotes() {
         new Thread(() -> {
-            List<Note> updatedNotes = noteManager.getNotes();
-            runOnUiThread(() -> {
-                noteAdapter.setNotes(updatedNotes);
-            });
+            List<Note> notes = noteManager.getNotes();
+            runOnUiThread(() -> noteAdapter.setNotes(notes));
         }).start();
     }
 
-
-
+    @SuppressLint("SetTextI18n")
     private void askForUsername() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Wie heißt du?");
@@ -162,6 +157,24 @@ public class MainActivity extends AppCompatActivity {
 
         builder.show();
     }
+
+    private void saveUsername(String name) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_USERNAME, name).apply();
+    }
+
+    private String loadUsername() {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_USERNAME, null);
+    }
+
+    private void startSpeechRecognition() {
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE");
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Was möchtest du wissen?");
+
+    }
+
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -171,7 +184,6 @@ public class MainActivity extends AppCompatActivity {
             if (result != null && !result.isEmpty()) {
                 String spokenText = result.get(0).toLowerCase();
 
-                // Spracherkennung auswerten
                 if (spokenText.contains("termin speichern")) {
                     appointmentManager.addAppointment(spokenText);
                     refreshAppointments();
@@ -220,31 +232,9 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     tts.speak("Das habe ich leider nicht verstanden.", TextToSpeech.QUEUE_FLUSH, null, null);
                 }
-
             } else {
                 tts.speak("Ich konnte dich leider nicht verstehen.", TextToSpeech.QUEUE_FLUSH, null, null);
             }
-        }
-    }
-
-
-    private void saveUsername(String name) {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_USERNAME, name).apply();
-    }
-
-    private String loadUsername() {
-        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_USERNAME, null);
-    }
-
-    private void startSpeechRecognition() {
-        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE");
-        intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Was möchtest du wissen?");
-        try {
-            startActivityForResult(intent, 1001);
-        } catch (Exception e) {
-            Toast.makeText(this, "Spracherkennung wird nicht unterstützt", Toast.LENGTH_SHORT).show();
         }
     }
 
